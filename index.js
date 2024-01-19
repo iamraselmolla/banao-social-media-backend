@@ -250,7 +250,7 @@ async function run() {
 
         });
         // Match OTP
-        app.post('/match-opt', async (req, res) => {
+        app.post('/match-otp', async (req, res) => {
             console.log(req.body)
             const { email, otp } = req.body
             const user = await usersCollection.findOne({ email: email, otp: parseInt(otp) });
