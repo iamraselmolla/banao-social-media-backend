@@ -126,29 +126,32 @@ async function run() {
                 res.status(500).json({ message: 'Internal server error' });
             }
         });
+        // Create a post
         app.post('/posts', async (req, res) => {
             const data = req.body;
             const result = await postsCollection.insertOne(data);
             res.send(result)
         })
+        // Register user
         app.post('/users', async (req, res) => {
             const data = req.body;
             const result = await usersCollection.insertOne(data);
             res.send(result)
         })
+        // Get posts
         app.get('/posts', async (req, res) => {
             const query = {};
             const result = await postsCollection.find(query).sort({ postedTime: -1 }).toArray();
             res.send(result)
         })
-
+        // Delete a posy
         app.delete('/delete-post/:id', async (req, res) => {
             const id = req.params.id
             const query = { _id: new ObjectId(id) }
             const result = await postsCollection.deleteOne(query)
             res.send(result)
         });
-
+        // Edit a post
         app.put('/edit-post/:id', async (req, res) => {
             const id = req.params.id;
             const query = { _id: new ObjectId(id) };
@@ -222,12 +225,22 @@ async function run() {
             }
         });
 
-        // Forget PAssword
+        // Forget Password
         app.post("/forget-password", async (req, res) => {
-            const { otpNumber, mailInput } = req.body
+            const { mailInput } = req.body
             const findUser = await usersCollection.findOne({ email: mailInput })
             if (!findUser) {
                 return res.status(400).json({ message: 'User not found', statusCode: 400 })
+            }
+            const otpNumber = Math.floor(Math.random() * 9000 + 1000);
+            try {
+                await usersCollection.updateOne(
+                    { email: mailInput },
+                    { $set: { otp: otpNumber } }
+                );
+            } catch (error) {
+                console.error('Error storing OTP in the database:', error);
+                return res.status(500).json({ message: 'Internal server error.' });
             }
 
             sendEmail({ mailInput, otpNumber })
@@ -236,26 +249,48 @@ async function run() {
 
 
         });
+        // Match OTP
+        app.post('/match-opt', async (req, res) => {
+            console.log(req.body)
+            const { email, otp } = req.body
+            const user = await usersCollection.findOne({ email: email, otp: parseInt(otp) });
 
+            if (!user) {
+                return res.status(400).json({ message: 'Invalid OTP', statusCode: 400 });
+            }
+            return res.status(200).json({ message: 'OPT Matched', matched: true })
+        });
 
         // Update Password
         app.put('/reset-password', async (req, res) => {
             const { password, email } = req.body;
-            const hashedPassword = await bcrypt.hash(password, 10);
 
             try {
-                const result = await usersCollection.updateMany(
+                const user = await usersCollection.findOne({ email: email });
+
+                if (!user) {
+                    return res.status(400).json({ message: 'Something Wrong', statusCode: 400 });
+                }
+
+                const hashedPassword = await bcrypt.hash(password, 10);
+
+                // Update password and remove OTP field
+                const result = await usersCollection.updateOne(
                     { email: email },
-                    { $set: { password: hashedPassword } },
-                    { upsert: true }
+                    { $set: { password: hashedPassword }, $unset: { otp: 1 } }
                 );
 
-                res.status(200).json({ message: 'Password reset successful', statusCode: 200 });
+                if (result.modifiedCount > 0) {
+                    res.status(200).json({ message: 'Password reset successful', statusCode: 200 });
+                } else {
+                    res.status(400).json({ message: 'Invalid OTP', statusCode: 400 });
+                }
             } catch (error) {
                 console.error('Error updating password:', error);
                 res.status(500).json({ message: 'Internal server error.' });
             }
         });
+
     }
     finally {
 
